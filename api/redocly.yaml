@@ -1,0 +1,25 @@
+extends: [minimal]
+apis:
+  banking-v1:
+    root: openapi/banking-v1.yaml
+  money-cases:
+    root: tests/minor-units.yaml
+    # This fixture exercises component schemas without exposing HTTP operations.
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
+rules:
+  no-unresolved-refs: error
+  operation-operationId: error
+  operation-operationId-unique: error
+  no-invalid-media-type-examples: error
+  no-invalid-parameter-examples: error
+  no-invalid-schema-examples: error
+  rule/operation-availability:
+    subject:
+      type: Operation
+      property: x-implementation-status
+    assertions:
+      defined: true
+      enum: [planned, available]
+    severity: error

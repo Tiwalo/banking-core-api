@@ -10,6 +10,23 @@ permissions:
   contents: read
 
 jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the v1 contract, examples, and backward compatibility
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/verify_contract.py "$BASE_REVISION"
+      - name: Identify the client contract by commit
+        if: github.event_name == 'push'
+        run: |
+          echo "[Banking v1 at ${GITHUB_SHA}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/api/openapi/banking-v1.yaml)" >> "$GITHUB_STEP_SUMMARY"
+
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -1,0 +1,20 @@
+openapi: 3.1.1
+info:
+  title: Centavo wire-format tests
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    ValidBalance:
+      allOf:
+        - $ref: '../openapi/banking-v1.yaml#/components/schemas/MinorUnits'
+      examples: ['0', '9007199254740993', '9223372036854775807']
+    ValidTransferAmount:
+      allOf:
+        - $ref: '../openapi/banking-v1.yaml#/components/schemas/TransferAmountMinor'
+      examples: ['1', '999999999999999999', '9007199254740993', '9223372036854775807']
+    InvalidTransferAmount:
+      # Each example must fail the published transfer schema to satisfy this complement.
+      not:
+        $ref: '../openapi/banking-v1.yaml#/components/schemas/TransferAmountMinor'
+      examples: [1, 0, '0', '', '01', '-1', '+1', '1.00', '1e2', ' 1', '9223372036854775808', '18446744073709551616']
