@@ -1,1 +1,0 @@
-# banking-core-api
