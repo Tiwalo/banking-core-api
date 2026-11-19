@@ -6,6 +6,8 @@
     "client": {
       "banking-core-api": [
         {"name": "accounts:read"},
+        {"name": "transfers:create"},
+        {"name": "transfers:read"},
         {"name": "operations:investigate"}
       ]
     }
@@ -43,7 +45,7 @@
       "email": "customer@example.invalid",
       "emailVerified": true,
       "enabled": true,
-      "clientRoles": {"banking-core-api": ["accounts:read"]}
+      "clientRoles": {"banking-core-api": ["accounts:read", "transfers:create", "transfers:read"]}
     },
     {
       "id": "3dd479c3-5a21-4c57-971d-559e531aa39c",

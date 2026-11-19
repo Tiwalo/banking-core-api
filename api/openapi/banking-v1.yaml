@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Tiwalo Banking API
-  version: 1.0.1
+  version: 1.0.2
   description: |
     Customer API for simulated PHP deposit accounts and internal transfers.
     Amounts are decimal strings in centavos. Clients must preserve all digits.
@@ -82,11 +82,12 @@ paths:
   /transfers:
     post:
       operationId: createInternalTransfer
-      x-implementation-status: planned
+      x-implementation-status: available
       tags: [Transfers]
       summary: Transfer PHP between two distinct active Tiwalo deposit accounts
       description: |
-        The authenticated customer must own the source. The destination can belong to another
+        The authenticated customer needs the transfers:create API client role and must own the source.
+        The destination can belong to another
         customer and is addressed by its opaque recipient reference. The configured per-transfer
         cap and available source funds are checked before posting.
 
@@ -184,10 +185,10 @@ paths:
   /transfers/{transferId}:
     get:
       operationId: getTransferReceipt
-      x-implementation-status: planned
+      x-implementation-status: available
       tags: [Transfers]
       summary: Read the initiating customer's posted transfer receipt
-      description: The transfer ID identifies the same committed result returned by transfer creation.
+      description: The initiating customer needs the transfers:read API client role and ownership of the source. The transfer ID identifies the same committed result returned by transfer creation.
       parameters:
         - name: transferId
           in: path

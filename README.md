@@ -4,7 +4,7 @@ Java 25 and Spring Boot 4.1.2 backend for a simulated Philippine digital bank. U
 
 ## Banking v1 contract
 
-The [OpenAPI 3.1 contract](api/openapi/banking-v1.yaml) defines customer account reads, internal transfer submission, same-key replay, and receipt lookup. The two account reads are available. Transfer submission and receipts remain planned.
+The [OpenAPI 3.1 contract](api/openapi/banking-v1.yaml) covers the available customer account reads, internal transfer submission, same-key replay, and owner-scoped receipt lookup.
 
 For a new client version, `banking-web` and `banking-mobile` should pin the full backend commit SHA and the path `api/openapi/banking-v1.yaml` from a verified merge to `main`. The **contract** CI job links that immutable revision in its push summary. In a backend checkout, `git show <full-commit-sha>:api/openapi/banking-v1.yaml` retrieves the corresponding document. A client can keep its existing pin through later additive updates.
 
@@ -26,8 +26,9 @@ Install JDK 25 and start a Docker engine that can run Linux containers. From the
    java -jar $jar --spring.profiles.active=local-migrate '--spring.datasource.username=${TIWALO_MIGRATION_USER}' '--spring.datasource.password=${TIWALO_MIGRATION_PASSWORD}'
    ```
 
-   Start the API in a separate shell with only its restricted datasource credentials and local port settings. Run `java -jar target/banking-core-api-0.0.1-SNAPSHOT.jar --spring.profiles.active=local`. The API listens on port 8081. Outside the local profile, configure `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUERURI` for the trusted issuer. Flyway runs in the migration process.
+   In a separate API shell, set its restricted datasource credentials, local port settings and a positive per-transfer cap in PHP centavos. For example, `$env:TIWALO_TRANSFER_CAP_MINOR = '500000'` sets a simulated limit of ₱5,000 per transfer. The HTTP service requires an explicit cap. Run `java -jar target/banking-core-api-0.0.1-SNAPSHOT.jar --spring.profiles.active=local`. The API listens on port 8081. Outside the local profile, configure `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUERURI` for the trusted issuer. Flyway runs in the migration process.
 4. In the Keycloak admin console, select the imported `tiwalo` realm. Under **Users → demo-customer → Credentials**, set a local password and turn **Temporary** off. The optional `demo-operator` has a separate role. Realm import runs on first initialization and preserves existing realms on restart.
+   For an existing realm, add the `transfers:create` and `transfers:read` client roles to `banking-core-api`, assign both to `demo-customer`, and obtain a fresh token. Fresh imports include both roles.
 5. Seed the synthetic account once the API has started. In PowerShell, run the following from the repository root with the same environment as Compose.
 
 ```powershell
@@ -69,4 +70,26 @@ Invoke-RestMethod -Headers $headers -Uri "http://localhost:8081/api/v1/accounts/
 
 The API checks the token signature, issuer, `banking-core-api` audience, expiry, subject, and Keycloak bearer token type. Account reads require the API client role `accounts:read` and a customer mapping for the verified issuer and subject. Every account query is scoped to that customer. Page cursors identify a continuation within the same customer's accounts. [Identity and opening-balance decision](docs/adr/0002-identity-and-unfunded-accounts.md)
 
-Stop the app with Ctrl+C and run `docker compose stop postgres keycloak` to retain the local data. After the first posting, keep a ledger-aware account reader in service. An older binary would report zero for funded accounts. Preserve posted history and apply a forward migration for schema fixes.
+### Send an internal transfer
+
+Apply V3, rerun the local seed, fund the sender, and obtain a customer token as above. Create one intent and save its key and payload together. This example sends ₱10 to the seeded synthetic payee.
+
+```powershell
+$key = [guid]::NewGuid().ToString()
+$paymentHeaders = @{Authorization=$headers.Authorization; 'Idempotency-Key'=$key}
+$payload = @{
+    sourceAccountId='9e4777f9-8de5-462c-8366-9d8aa9766096'
+    recipientReference='rcp_24bf04e6bd8b4a39bbd3c8f3a8fa1245'
+    currency='PHP'
+    amountMinor='1000'
+} | ConvertTo-Json
+```
+
+```powershell
+$receipt = Invoke-RestMethod -Method Post -Uri 'http://localhost:8081/api/v1/transfers' -Headers $paymentHeaders -ContentType 'application/json' -Body $payload
+Invoke-RestMethod -Headers $headers -Uri "http://localhost:8081/api/v1/transfers/$($receipt.transferId)"
+```
+
+After a timeout, lost response or `503 TRANSFER_BUSY`, repeat the POST with the saved key and original payload. A posted transfer returns the original `201`, receipt and Location. A definite `422` decline also replays. Changed input with the same key returns `409`. [Atomic transfer decision](docs/adr/0004-atomic-internal-transfers.md)
+
+Stop the app with Ctrl+C and run `docker compose stop postgres keycloak` to retain the local data. Preserve financial records, idempotency keys, and receipt lookup during a rollout or rollback. Apply a forward migration for schema fixes.
