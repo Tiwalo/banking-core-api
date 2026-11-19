@@ -27,7 +27,7 @@ import tools.jackson.databind.ObjectMapper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.flyway.enabled=true")
 @Import(TestcontainersConfiguration.class)
 @Sql(scripts = "/accounts-fixture.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
 class AccountHttpTests {
@@ -163,6 +163,25 @@ class AccountHttpTests {
         }
         var differentKey = new RSAKeyGenerator(2048).generate();
         problem(get(ACCOUNTS, ISSUER.sign(ISSUER.claims("first", READ), differentKey)), 401, "UNAUTHORIZED");
+    }
+
+    @Test
+    void bothOwnerReadsReturnPostedCentavosIncludingBeyondJavascriptSafeIntegers() throws Exception {
+        String deposit = "00000000-0000-4000-8000-000000000021";
+        database.sql("INSERT INTO funding_actor (login_name) VALUES (session_user)").update();
+        database.sql("""
+                SELECT post_simulated_funding(gen_random_uuid(), ARRAY[
+                   ROW('00000000-0000-4000-8000-000000000023', 'DEBIT', 'PHP', 9007199254740993)::ledger_leg,
+                   ROW(:deposit, 'CREDIT', 'PHP', 9007199254740993)::ledger_leg
+                ])
+                """).param("deposit", java.util.UUID.fromString(deposit)).query(java.util.UUID.class).single();
+        String token = ISSUER.token("first", READ);
+        JsonNode detail = success(ACCOUNTS + "/" + deposit, token);
+        assertThat(detail.get("availableBalanceMinor").isString()).isTrue();
+        assertThat(detail.get("availableBalanceMinor").asString()).isEqualTo("9007199254740993");
+        JsonNode page = success(ACCOUNTS + "?limit=100", token);
+        assertThat(page.at("/accounts/20")).isEqualTo(detail);
+        problem(get(ACCOUNTS + "/" + deposit, ISSUER.token("second", READ)), 404, "NOT_FOUND");
     }
 
     @Test

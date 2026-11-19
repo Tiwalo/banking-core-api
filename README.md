@@ -1,6 +1,6 @@
 # Tiwalo Banking Core API
 
-Java 25 and Spring Boot 4.1.2 backend for a simulated Philippine digital bank. Use synthetic identities and fictional money. Customers can list and read their own PHP deposit accounts. The database enforces a zero opening balance until ledger-backed posting ships. See [ADR 0001](docs/adr/0001-modular-monolith.md) for module ownership.
+Java 25 and Spring Boot 4.1.2 backend for a simulated Philippine digital bank. Use synthetic identities and fictional money. Customers can list and read their own PHP deposit accounts. Accounts open at zero. Both account reads show balances from posted journals, in integer centavos encoded as decimal strings. [Module ownership](docs/adr/0001-modular-monolith.md) · [Ledger posting](docs/adr/0003-ledger-posting.md)
 
 ## Banking v1 contract
 
@@ -16,17 +16,35 @@ Install JDK 25 and start a Docker engine that can run Linux containers. From the
 
 ## Run accounts and identity locally
 
-1. Set `SPRING_DATASOURCE_USERNAME` to a local application login such as `banking`. Set `SPRING_DATASOURCE_PASSWORD` for that login and `POSTGRES_PASSWORD` separately for PostgreSQL bootstrap. Supply distinct local secrets through your shell or secret manager. Keep the values for subsequent sessions using the same volume.
+1. Set `SPRING_DATASOURCE_USERNAME` to a restricted API login such as `tiwalo_api`. Set `TIWALO_MIGRATION_USER` to a separate schema owner such as `banking`. Supply distinct local secrets for `SPRING_DATASOURCE_PASSWORD`, `TIWALO_MIGRATION_PASSWORD`, `TIWALO_FUNDING_PASSWORD` and `POSTGRES_PASSWORD` through your shell or secret manager. Keep existing passwords when reusing a volume. For a V1 volume, use its original application login and password as the migration owner and choose a fresh API login.
 2. Set a local `KC_BOOTSTRAP_ADMIN_PASSWORD` before first starting Keycloak. Run `docker compose up -d postgres keycloak`. PostgreSQL listens on loopback port 5433 and Keycloak on loopback port 8180. Set `TIWALO_POSTGRES_PORT` or `TIWALO_KEYCLOAK_PORT` in both shells if a port is occupied. Each service retains its data in its own local volume.
-3. Set `SPRING_PROFILES_ACTIVE=local` in the application shell and run `./mvnw spring-boot:run` or `.\mvnw.cmd spring-boot:run`. Flyway creates the identity and account tables. The API listens on port 8081. Outside the local profile, configure the trusted `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUERURI` for your issuer. The default JWKS path is Keycloak's certs endpoint under that issuer.
+3. Build the jar and migrate the database once per schema release. On an **existing V1 volume**, first run `docker compose exec -T postgres psql -U postgres -d banking_core -f /docker-entrypoint-initdb.d/10-application-role.sql` after Compose has recreated the container with the new environment. Fresh volumes run this role setup automatically. In PowerShell run the following. The single quotes pass secret references to Spring without expanding passwords into the command line.
+
+   ```powershell
+   .\mvnw.cmd clean verify
+   $jar = 'target/banking-core-api-0.0.1-SNAPSHOT.jar'
+   java -jar $jar --spring.profiles.active=local-migrate '--spring.datasource.username=${TIWALO_MIGRATION_USER}' '--spring.datasource.password=${TIWALO_MIGRATION_PASSWORD}'
+   ```
+
+   Start the API in a separate shell with only its restricted datasource credentials and local port settings. Run `java -jar target/banking-core-api-0.0.1-SNAPSHOT.jar --spring.profiles.active=local`. The API listens on port 8081. Outside the local profile, configure `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUERURI` for the trusted issuer. Flyway runs in the migration process.
 4. In the Keycloak admin console, select the imported `tiwalo` realm. Under **Users → demo-customer → Credentials**, set a local password and turn **Temporary** off. The optional `demo-operator` has a separate role. Realm import runs on first initialization and preserves existing realms on restart.
 5. Seed the synthetic account once the API has started. In PowerShell, run the following from the repository root with the same environment as Compose.
 
 ```powershell
 $issuerPort = if ($env:TIWALO_KEYCLOAK_PORT) { $env:TIWALO_KEYCLOAK_PORT } else { '8180' }
 $issuer = "http://localhost:$issuerPort/realms/tiwalo"
-Get-Content -Raw dev/postgres/seed-identity.sql | docker compose exec -T postgres psql -U $env:SPRING_DATASOURCE_USERNAME -d banking_core -v "issuer=$issuer"
+Get-Content -Raw dev/postgres/seed-identity.sql | docker compose exec -T postgres psql -U $env:TIWALO_MIGRATION_USER -d banking_core -v "issuer=$issuer"
 ```
+
+### Post simulated funding
+
+After seeding, run the following from the setup shell. This non-web command authenticates as the dedicated local funding login. The example funds the seeded deposit account with 50,000 centavos. It prints the committed journal ID.
+
+```powershell
+java -jar $jar --spring.profiles.active=local-funding --spring.datasource.username=tiwalo_local_seed '--spring.datasource.password=${TIWALO_FUNDING_PASSWORD}' --funding.reference=b3095e34-c825-4a5c-b52d-b19bf15048f5 --funding.clearing=94ba5051-0214-45ef-bbd4-89fe108f2658 --funding.deposit=9e4777f9-8de5-462c-8366-9d8aa9766096 --funding.amount-minor=50000
+```
+
+Retry the identical command after a timeout or lost response. The same funding identity, reference and request return the original journal, including after an account changes status. Reusing the reference with a different request fails. Assign a fresh reference only for an intentional additional funding operation. Keep the funding actor UUID when rotating its login. Public deployments provision the empty `tiwalo_dev_funder` privilege group required by Flyway and omit funding logins and seed data.
 
 ### Read an account with a local token
 
@@ -51,4 +69,4 @@ Invoke-RestMethod -Headers $headers -Uri "http://localhost:8081/api/v1/accounts/
 
 The API checks the token signature, issuer, `banking-core-api` audience, expiry, subject, and Keycloak bearer token type. Account reads require the API client role `accounts:read` and a customer mapping for the verified issuer and subject. Every account query is scoped to that customer. Page cursors identify a continuation within the same customer's accounts. [Identity and opening-balance decision](docs/adr/0002-identity-and-unfunded-accounts.md)
 
-Stop the app with Ctrl+C and run `docker compose stop postgres keycloak` to retain the local data. Preserve the additive V1 tables and Flyway history during an application rollback.
+Stop the app with Ctrl+C and run `docker compose stop postgres keycloak` to retain the local data. After the first posting, keep a ledger-aware account reader in service. An older binary would report zero for funded accounts. Preserve posted history and apply a forward migration for schema fixes.

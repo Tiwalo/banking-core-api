@@ -16,8 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 class OwnedAccounts {
 
     private static final String OWNED_DEPOSITS = """
-            SELECT account_id, recipient_reference, status, currency, opening_balance_minor, page_cursor
-            FROM account WHERE customer_id = :owner AND classification = 'DEPOSIT_LIABILITY'
+            SELECT account_id, recipient_reference, status, currency, balance_minor, page_cursor
+            FROM account JOIN account_posted_balance USING (account_id)
+            WHERE customer_id = :owner AND classification = 'DEPOSIT_LIABILITY'
             """;
     private final JdbcClient database;
 
@@ -60,7 +61,7 @@ class OwnedAccounts {
 
     private static AccountView account(ResultSet row) throws SQLException {
         return new AccountView(row.getObject("account_id", UUID.class), row.getString("recipient_reference"),
-                row.getString("status"), row.getString("currency"), Long.toString(row.getLong("opening_balance_minor")));
+                row.getString("status"), row.getString("currency"), Long.toString(row.getLong("balance_minor")));
     }
 
     private record PageRow(AccountView account, UUID cursor) {}

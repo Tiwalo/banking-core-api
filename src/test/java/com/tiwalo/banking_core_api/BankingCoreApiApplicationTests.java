@@ -10,11 +10,13 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest(properties = "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://issuer.example.invalid")
+@SpringBootTest(properties = {"spring.flyway.enabled=true",
+        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://issuer.example.invalid"})
 class BankingCoreApiApplicationTests {
 
 	@Test
@@ -33,8 +35,19 @@ class BankingCoreApiApplicationTests {
 				.locations("filesystem:" + emptyMigrations).load();
 		assertThat(foundation.migrate().migrationsExecuted).isZero();
 
+		var v1 = Flyway.configure().dataSource(dataSource).schemas(schema).target("1").load();
+		assertThat(v1.migrate().migrationsExecuted).isOne();
+		var jdbc = JdbcClient.create(dataSource);
+		jdbc.sql("""
+				INSERT INTO foundation_upgrade.account (classification, status, currency)
+				VALUES ('TEST_CLEARING_ASSET', 'ACTIVE', 'PHP')
+				""").update();
 		var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).load();
 		assertThat(upgrade.migrate().migrationsExecuted).isOne();
+		assertThat(jdbc.sql("SELECT balance_minor FROM foundation_upgrade.account_posted_balance")
+				.query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("SELECT count(*) FROM foundation_upgrade.ledger_journal")
+				.query(Long.class).single()).isZero();
 		upgrade.validate();
 		assertThat(upgrade.migrate().migrationsExecuted).isZero();
 	}
