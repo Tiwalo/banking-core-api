@@ -4,7 +4,7 @@ Java 25 and Spring Boot 4.1.2 backend for a simulated Philippine digital bank. U
 
 ## Banking v1 contract
 
-The [OpenAPI 3.1 contract](api/openapi/banking-v1.yaml) covers the available customer account reads, internal transfer submission, same-key replay, and owner-scoped receipt lookup.
+The [OpenAPI 3.1 contract](api/openapi/banking-v1.yaml) covers customer account reads, internal transfers, same-key replay, owner-scoped receipts, and operator reconciliation.
 
 For a new client version, `banking-web` and `banking-mobile` should pin the full backend commit SHA and the path `api/openapi/banking-v1.yaml` from a verified merge to `main`. The **contract** CI job links that immutable revision in its push summary. In a backend checkout, `git show <full-commit-sha>:api/openapi/banking-v1.yaml` retrieves the corresponding document. A client can keep its existing pin through later additive updates.
 
@@ -92,4 +92,24 @@ Invoke-RestMethod -Headers $headers -Uri "http://localhost:8081/api/v1/transfers
 
 After a timeout, lost response or `503 TRANSFER_BUSY`, repeat the POST with the saved key and original payload. A posted transfer returns the original `201`, receipt and Location. A definite `422` decline also replays. Changed input with the same key returns `409`. [Atomic transfer decision](docs/adr/0004-atomic-internal-transfers.md)
 
-Stop the app with Ctrl+C and run `docker compose stop postgres keycloak` to retain the local data. Preserve financial records, idempotency keys, and receipt lookup during a rollout or rollback. Apply a forward migration for schema fixes.
+### Reconcile the ledger as an operator
+
+Apply V4 and the local identity seed. Set a local password for `demo-operator` in Keycloak, then complete a fresh device login as that operator. The API requires the `operations:investigate` role and the internal operator mapping. In the shell containing the operator's token, run the following.
+
+```powershell
+$operatorHeaders = @{Authorization="Bearer $($token.access_token)"}
+$reports = 'http://localhost:8081/api/v1/operations/reconciliations'
+$report = Invoke-RestMethod -Method Post -Uri $reports -Headers $operatorHeaders
+$report | Select-Object runId, startedAt, findingCount
+$findingsUri = "$reports/$($report.runId)/findings"
+$page = Invoke-RestMethod -Uri "${findingsUri}?limit=20" -Headers $operatorHeaders
+$page.findings
+while ($page.nextCursor) {
+    $page = Invoke-RestMethod -Uri "${findingsUri}?limit=20&cursor=$($page.nextCursor)" -Headers $operatorHeaders
+    $page.findings
+}
+```
+
+A count of zero means the snapshot passed every check. Use the run ID and finding reference when escalating a discrepancy. The report preserves the original evidence as new transfers post. Every capture and findings lookup records the operator who performed it. [Reconciliation decision](docs/adr/0005-reconciliation-investigation.md)
+
+Stop the app with Ctrl+C and run `docker compose stop postgres keycloak` to retain the local data. Preserve financial records, idempotency keys, receipts, reports and audit history during a rollout or rollback. Apply a forward migration for schema fixes.

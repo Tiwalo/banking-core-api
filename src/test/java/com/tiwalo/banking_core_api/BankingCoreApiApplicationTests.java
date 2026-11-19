@@ -61,12 +61,39 @@ class BankingCoreApiApplicationTests {
 				    'PHP', 41)::foundation_upgrade.ledger_leg)) FROM foundation_upgrade.account
 				""";
 		var original = jdbc.sql(funding).query(java.util.UUID.class).single();
-		var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).load();
-		assertThat(upgrade.migrate().migrationsExecuted).isOne();
+		var v3 = Flyway.configure().dataSource(dataSource).schemas(schema).target("3").load();
+		assertThat(v3.migrate().migrationsExecuted).isOne();
 		assertThat(jdbc.sql(funding).query(java.util.UUID.class).single()).isEqualTo(original);
 		assertThat(jdbc.sql("SELECT balance_minor FROM foundation_upgrade.account_posted_balance")
 				.query(Long.class).list()).containsExactly(41L, 41L);
 		assertThat(jdbc.sql("SELECT count(*) FROM foundation_upgrade.posting_audit").query(Long.class).single()).isOne();
+		jdbc.sql("""
+				INSERT INTO foundation_upgrade.security_actor (issuer, subject, actor_kind, customer_id)
+				SELECT 'test', 'sender', 'CUSTOMER', customer_id FROM foundation_upgrade.customer
+				""").update();
+		jdbc.sql("""
+				INSERT INTO foundation_upgrade.account (customer_id, classification, status, currency, recipient_reference)
+				SELECT customer_id, 'DEPOSIT_LIABILITY', 'ACTIVE', 'PHP', 'rcp_' || repeat('2',32) FROM foundation_upgrade.customer
+				""").update();
+		String transfer = """
+				SELECT result_id FROM foundation_upgrade.submit_internal_transfer(
+				    (SELECT actor_id FROM foundation_upgrade.security_actor WHERE subject = 'sender'), 'upgrade',
+				    (SELECT account_id FROM foundation_upgrade.account WHERE recipient_reference = 'rcp_' || repeat('1',32)),
+				    convert_to('rcp_' || repeat('2',32), 'UTF8'), 'PHP', 7, 100)
+				""";
+		var receipt = jdbc.sql(transfer).query(java.util.UUID.class).single();
+		var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).load();
+		assertThat(upgrade.migrate().migrationsExecuted).isOne();
+		assertThat(jdbc.sql(transfer).query(java.util.UUID.class).single()).isEqualTo(receipt);
+		assertThat(jdbc.sql("SELECT balance_minor FROM foundation_upgrade.account_posted_balance")
+				.query(Long.class).list()).containsExactlyInAnyOrder(41L, 34L, 7L);
+		assertThat(jdbc.sql("SELECT count(*) FROM foundation_upgrade.reconciliation_run").query(Long.class).single()).isZero();
+		var operator = jdbc.sql("""
+				INSERT INTO foundation_upgrade.security_actor (issuer, subject, actor_kind) VALUES ('test','operator','OPERATOR')
+				RETURNING actor_id
+				""").query(java.util.UUID.class).single();
+		assertThat(jdbc.sql("SELECT finding_count FROM foundation_upgrade.run_reconciliation(?)")
+				.param(operator).query(Long.class).single()).isZero();
 		upgrade.validate();
 		assertThat(upgrade.migrate().migrationsExecuted).isZero();
 	}

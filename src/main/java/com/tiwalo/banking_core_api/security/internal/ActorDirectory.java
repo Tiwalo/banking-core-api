@@ -22,7 +22,7 @@ class ActorDirectory {
     static final String ACCOUNT_READ = "accounts:read";
     static final String TRANSFER_CREATE = "transfers:create";
     static final String TRANSFER_READ = "transfers:read";
-    private static final String INVESTIGATE = "operations:investigate";
+    static final String INVESTIGATE = "operations:investigate";
     private final JdbcClient database;
 
     ActorDirectory(JdbcClient database) {
