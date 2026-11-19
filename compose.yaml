@@ -8,6 +8,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set the local PostgreSQL bootstrap password}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:?Set the local application database user}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?Set the local application database password}
+      TIWALO_MIGRATION_USER: ${TIWALO_MIGRATION_USER:?Set the schema owner login}
+      TIWALO_MIGRATION_PASSWORD: ${TIWALO_MIGRATION_PASSWORD:?Set the schema owner password}
+      TIWALO_FUNDING_PASSWORD: ${TIWALO_FUNDING_PASSWORD:?Set the local funding login password}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./dev/postgres/application-role.sql:/docker-entrypoint-initdb.d/10-application-role.sql:ro

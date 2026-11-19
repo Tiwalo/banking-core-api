@@ -1,6 +1,9 @@
 -- Apply explicitly to a local database after Flyway has migrated it.
 \set ON_ERROR_STOP on
 BEGIN;
+INSERT INTO funding_actor (actor_id, login_name)
+VALUES ('99937d61-a725-4f65-9a7d-a9d027ccbc99', 'tiwalo_local_seed')
+ON CONFLICT (actor_id) DO NOTHING;
 INSERT INTO customer (customer_id) VALUES ('094084de-db04-4039-b35d-b22ca2171282')
 ON CONFLICT (customer_id) DO NOTHING;
 
@@ -12,5 +15,8 @@ ON CONFLICT (issuer, subject) DO NOTHING;
 INSERT INTO account (account_id, classification, customer_id, recipient_reference, status, currency)
 VALUES ('9e4777f9-8de5-462c-8366-9d8aa9766096', 'DEPOSIT_LIABILITY', '094084de-db04-4039-b35d-b22ca2171282',
         'rcp_' || replace(gen_random_uuid()::text, '-', ''), 'ACTIVE', 'PHP')
+ON CONFLICT (account_id) DO NOTHING;
+INSERT INTO account (account_id, classification, status, currency)
+VALUES ('94ba5051-0214-45ef-bbd4-89fe108f2658', 'TEST_CLEARING_ASSET', 'ACTIVE', 'PHP')
 ON CONFLICT (account_id) DO NOTHING;
 COMMIT;
