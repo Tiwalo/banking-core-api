@@ -15,7 +15,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest(properties = {"spring.flyway.enabled=true",
+@SpringBootTest(properties = {"spring.flyway.enabled=true", "tiwalo.transfer.max-amount-minor=1000",
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://issuer.example.invalid"})
 class BankingCoreApiApplicationTests {
 
@@ -42,12 +42,31 @@ class BankingCoreApiApplicationTests {
 				INSERT INTO foundation_upgrade.account (classification, status, currency)
 				VALUES ('TEST_CLEARING_ASSET', 'ACTIVE', 'PHP')
 				""").update();
-		var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).load();
-		assertThat(upgrade.migrate().migrationsExecuted).isOne();
+		var v2 = Flyway.configure().dataSource(dataSource).schemas(schema).target("2").load();
+		assertThat(v2.migrate().migrationsExecuted).isOne();
 		assertThat(jdbc.sql("SELECT balance_minor FROM foundation_upgrade.account_posted_balance")
 				.query(Long.class).single()).isZero();
 		assertThat(jdbc.sql("SELECT count(*) FROM foundation_upgrade.ledger_journal")
 				.query(Long.class).single()).isZero();
+		jdbc.sql("INSERT INTO foundation_upgrade.funding_actor (login_name) VALUES (session_user)").update();
+		jdbc.sql("""
+				WITH holder AS (INSERT INTO foundation_upgrade.customer DEFAULT VALUES RETURNING customer_id)
+				INSERT INTO foundation_upgrade.account (customer_id, classification, status, currency, recipient_reference)
+				SELECT customer_id, 'DEPOSIT_LIABILITY', 'ACTIVE', 'PHP', 'rcp_' || repeat('1',32) FROM holder
+				""").update();
+		String funding = """
+				SELECT foundation_upgrade.post_simulated_funding(
+				    '49342078-618b-457e-8c0c-b62970695936', array_agg(ROW(account_id,
+				    CASE classification WHEN 'TEST_CLEARING_ASSET' THEN 'DEBIT' ELSE 'CREDIT' END,
+				    'PHP', 41)::foundation_upgrade.ledger_leg)) FROM foundation_upgrade.account
+				""";
+		var original = jdbc.sql(funding).query(java.util.UUID.class).single();
+		var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).load();
+		assertThat(upgrade.migrate().migrationsExecuted).isOne();
+		assertThat(jdbc.sql(funding).query(java.util.UUID.class).single()).isEqualTo(original);
+		assertThat(jdbc.sql("SELECT balance_minor FROM foundation_upgrade.account_posted_balance")
+				.query(Long.class).list()).containsExactly(41L, 41L);
+		assertThat(jdbc.sql("SELECT count(*) FROM foundation_upgrade.posting_audit").query(Long.class).single()).isOne();
 		upgrade.validate();
 		assertThat(upgrade.migrate().migrationsExecuted).isZero();
 	}

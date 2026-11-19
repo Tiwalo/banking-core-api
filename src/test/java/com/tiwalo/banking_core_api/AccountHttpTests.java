@@ -27,7 +27,8 @@ import tools.jackson.databind.ObjectMapper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.flyway.enabled=true")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"spring.flyway.enabled=true", "tiwalo.transfer.max-amount-minor=1000"})
 @Import(TestcontainersConfiguration.class)
 @Sql(scripts = "/accounts-fixture.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
 class AccountHttpTests {

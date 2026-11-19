@@ -27,7 +27,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest(properties = {"spring.flyway.enabled=true",
+@SpringBootTest(properties = {"spring.flyway.enabled=true", "tiwalo.transfer.max-amount-minor=1000",
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://issuer.example.invalid"})
 @Import(TestcontainersConfiguration.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

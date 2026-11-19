@@ -68,6 +68,8 @@ class ApiSecurity {
                 .authorizeHttpRequests(routes -> routes
                         .requestMatchers(HttpMethod.GET, "/api/v1/accounts", "/api/v1/accounts/{accountId}")
                         .hasAuthority(ActorDirectory.ACCOUNT_READ)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/transfers").hasAuthority(ActorDirectory.TRANSFER_CREATE)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/transfers/{transferId}").hasAuthority(ActorDirectory.TRANSFER_READ)
                         .anyRequest().denyAll())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(unauthorized)
                         .accessDeniedHandler((req, res, ex) -> writeProblem(res, json, ApiProblem.FORBIDDEN)))

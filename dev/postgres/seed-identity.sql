@@ -19,4 +19,11 @@ ON CONFLICT (account_id) DO NOTHING;
 INSERT INTO account (account_id, classification, status, currency)
 VALUES ('94ba5051-0214-45ef-bbd4-89fe108f2658', 'TEST_CLEARING_ASSET', 'ACTIVE', 'PHP')
 ON CONFLICT (account_id) DO NOTHING;
+-- A synthetic payee for the local transfer example.
+INSERT INTO customer (customer_id) VALUES ('eacd2a81-50cb-47a5-a861-0d8c33bf6aa4')
+ON CONFLICT (customer_id) DO NOTHING;
+INSERT INTO account (account_id, classification, customer_id, recipient_reference, status, currency)
+VALUES ('123ac732-ff1d-4828-99a5-2030d57ec6d0', 'DEPOSIT_LIABILITY', 'eacd2a81-50cb-47a5-a861-0d8c33bf6aa4',
+        'rcp_24bf04e6bd8b4a39bbd3c8f3a8fa1245', 'ACTIVE', 'PHP')
+ON CONFLICT (account_id) DO NOTHING;
 COMMIT;
