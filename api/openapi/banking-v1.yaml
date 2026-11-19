@@ -1,9 +1,9 @@
 openapi: 3.1.1
 info:
   title: Tiwalo Banking API
-  version: 1.0.2
+  version: 1.1.0
   description: |
-    Customer API for simulated PHP deposit accounts and internal transfers.
+    Customer API for simulated PHP deposit accounts and internal transfers, with operator reconciliation.
     Amounts are decimal strings in centavos. Clients must preserve all digits.
     Each operation declares its runtime availability in x-implementation-status.
 servers:
@@ -15,6 +15,8 @@ tags:
     description: Deposit accounts owned by the authenticated customer.
   - name: Transfers
     description: Internal payments initiated by the authenticated customer.
+  - name: Reconciliation
+    description: Audited access for mapped operators with the operations:investigate API client role.
 
 paths:
   /accounts:
@@ -207,6 +209,77 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
 
+  /operations/reconciliations:
+    post:
+      operationId: runReconciliation
+      x-implementation-status: available
+      tags: [Reconciliation]
+      summary: Capture an immutable reconciliation report
+      description: Requires a mapped operator and the operations:investigate role. Each empty POST starts a separate synchronous scan of one committed PostgreSQL snapshot. A zero count means all checks passed.
+      responses:
+        '201':
+          description: The report and operator audit committed. Location points to the report's findings.
+          headers:
+            Location:
+              required: true
+              schema: {type: string, format: uri-reference}
+              description: Findings page for this run.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReconciliationRun'}
+              example: {runId: 'fe263158-be15-4d06-844a-e6ffe1f07d6b', startedAt: '2026-11-19T04:23:10Z', findingCount: 0}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/ReconciliationFailure'}
+  /operations/reconciliations/{runId}/findings:
+    get:
+      operationId: listReconciliationFindings
+      x-implementation-status: available
+      tags: [Reconciliation]
+      summary: Investigate a saved reconciliation report
+      description: Requires a mapped operator and the operations:investigate role. Each lookup is audited. Findings use ascending opaque reference order and preserve the evidence observed during the run.
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/Id'}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: cursor
+          in: query
+          description: An exclusive finding reference from this report. Use nextCursor to continue.
+          schema: {$ref: '#/components/schemas/FindingReference'}
+      responses:
+        '200':
+          description: A bounded page. The final page omits nextCursor.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runId, findings]
+                properties:
+                  runId: {$ref: '#/components/schemas/Id'}
+                  findings:
+                    type: array
+                    maxItems: 100
+                    items: {$ref: '#/components/schemas/ReconciliationFinding'}
+                  nextCursor: {$ref: '#/components/schemas/FindingReference'}
+              example:
+                runId: fe263158-be15-4d06-844a-e6ffe1f07d6b
+                findings:
+                  - reference: '931e1c4efd4082c1a4743256d87f540f26742c39a441e40877eb3766ce34468b'
+                    code: BALANCE_MISMATCH
+                    currency: PHP
+                    computedBalanceMinor: '1500'
+                    projectedBalanceMinor: '1200'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/ReconciliationFailure'}
+
 components:
   securitySchemes:
     bearerAuth:
@@ -215,6 +288,36 @@ components:
       bearerFormat: JWT
       description: Keycloak access token issued for this API. Customer operations require a mapped customer actor.
   schemas:
+    ReconciliationRun:
+      type: object
+      required: [runId, startedAt, findingCount]
+      properties:
+        runId: {$ref: '#/components/schemas/Id'}
+        startedAt: {type: string, format: date-time}
+        findingCount: {type: integer, format: int64, minimum: 0}
+    FindingReference:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+      description: Opaque reference stable across runs for the same check, subject and currency.
+    EvidenceMinor:
+      type: string
+      pattern: '^(0|-?[1-9][0-9]*)$'
+      description: Exact centavos from a diagnostic calculation. Inconsistent data can produce negative or out-of-BIGINT totals.
+    ReconciliationFinding:
+      type: object
+      required: [reference, code]
+      properties:
+        reference: {$ref: '#/components/schemas/FindingReference'}
+        code:
+          type: string
+          enum: [MISSING_PROJECTION, BALANCE_MISMATCH, JOURNAL_IMBALANCE, TRANSFER_JOURNAL_MISMATCH,
+                 JOURNAL_WITHOUT_TRANSFER, MISSING_POSTING_AUDIT, POSTING_AUDIT_MISMATCH, AUDIT_WITHOUT_JOURNAL]
+        currency: {$ref: '#/components/schemas/Currency'}
+        computedBalanceMinor: {$ref: '#/components/schemas/EvidenceMinor'}
+        projectedBalanceMinor: {$ref: '#/components/schemas/EvidenceMinor'}
+        debitTotalMinor: {$ref: '#/components/schemas/EvidenceMinor'}
+        creditTotalMinor: {$ref: '#/components/schemas/EvidenceMinor'}
+      description: Balance findings include the recomputed balance and any existing projection. Journal imbalance includes both per-currency totals. Link findings carry only a reference and code.
     Id:
       type: string
       format: uuid
@@ -308,6 +411,12 @@ components:
         status: 422
         code: INSUFFICIENT_FUNDS
   responses:
+    ReconciliationFailure:
+      description: Report creation or audited access failed.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example: {type: 'urn:tiwalo:problem:internal-error', title: Reconciliation service error, status: 500, code: INTERNAL_ERROR}
     InvalidRequest:
       description: Invalid input such as a malformed ID, invalid cursor, missing key or out-of-range amount.
       content:
@@ -334,7 +443,7 @@ components:
               code: {const: UNAUTHORIZED}
           example: {type: 'urn:tiwalo:problem:unauthorized', title: Authentication required, status: 401, code: UNAUTHORIZED}
     Forbidden:
-      description: The verified actor lacks customer permission for the operation.
+      description: The verified actor lacks permission for the operation.
       content:
         application/problem+json:
           schema:
