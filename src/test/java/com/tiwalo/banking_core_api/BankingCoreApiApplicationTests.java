@@ -1,9 +1,12 @@
 package com.tiwalo.banking_core_api;
 
+import java.nio.file.Path;
 import java.sql.SQLException;
 import javax.sql.DataSource;
 
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -11,7 +14,7 @@ import org.springframework.context.annotation.Import;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest
+@SpringBootTest(properties = "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://issuer.example.invalid")
 class BankingCoreApiApplicationTests {
 
 	@Test
@@ -21,5 +24,18 @@ class BankingCoreApiApplicationTests {
 			assertThat(database.getDatabaseProductName()).isEqualTo("PostgreSQL");
 			assertThat(database.getDatabaseMajorVersion()).isEqualTo(17);
 		}
+	}
+
+	@Test
+	void upgradesDatabaseWithFoundationFlywayHistory(@Autowired DataSource dataSource, @TempDir Path emptyMigrations) {
+		String schema = "foundation_upgrade";
+		var foundation = Flyway.configure().dataSource(dataSource).schemas(schema)
+				.locations("filesystem:" + emptyMigrations).load();
+		assertThat(foundation.migrate().migrationsExecuted).isZero();
+
+		var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).load();
+		assertThat(upgrade.migrate().migrationsExecuted).isOne();
+		upgrade.validate();
+		assertThat(upgrade.migrate().migrationsExecuted).isZero();
 	}
 }

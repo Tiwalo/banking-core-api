@@ -1,0 +1,59 @@
+{
+  "realm": "tiwalo",
+  "enabled": true,
+  "registrationAllowed": false,
+  "roles": {
+    "client": {
+      "banking-core-api": [
+        {"name": "accounts:read"},
+        {"name": "operations:investigate"}
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "banking-core-api",
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "tiwalo-local",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": {"oauth2.device.authorization.grant.enabled": "true"},
+      "defaultClientScopes": ["roles", "basic"],
+      "protocolMappers": [
+        {
+          "name": "banking-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {"included.client.audience": "banking-core-api", "access.token.claim": "true", "id.token.claim": "false"}
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "e30f7899-f8e4-4471-af1d-b46ec3ccbe92",
+      "username": "demo-customer",
+      "firstName": "Demo",
+      "lastName": "Customer",
+      "email": "customer@example.invalid",
+      "emailVerified": true,
+      "enabled": true,
+      "clientRoles": {"banking-core-api": ["accounts:read"]}
+    },
+    {
+      "id": "3dd479c3-5a21-4c57-971d-559e531aa39c",
+      "username": "demo-operator",
+      "firstName": "Demo",
+      "lastName": "Operator",
+      "email": "operator@example.invalid",
+      "emailVerified": true,
+      "enabled": true,
+      "clientRoles": {"banking-core-api": ["operations:investigate"]}
+    }
+  ]
+}

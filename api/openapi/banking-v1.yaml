@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Tiwalo Banking API
-  version: 1.0.0
+  version: 1.0.1
   description: |
     Customer API for simulated PHP deposit accounts and internal transfers.
     Amounts are decimal strings in centavos. Clients must preserve all digits.
@@ -20,10 +20,10 @@ paths:
   /accounts:
     get:
       operationId: listAccounts
-      x-implementation-status: planned
+      x-implementation-status: available
       tags: [Accounts]
       summary: List the customer's deposit accounts
-      description: Returns accounts in ascending account ID order. An empty page is a successful result.
+      description: Requires the banking-core-api client role accounts:read and a mapped customer. Returns accounts in ascending account ID order. An empty page is a successful result.
       parameters:
         - name: limit
           in: query
@@ -54,10 +54,10 @@ paths:
   /accounts/{accountId}:
     get:
       operationId: getAccount
-      x-implementation-status: planned
+      x-implementation-status: available
       tags: [Accounts]
       summary: Read an owned deposit account
-      description: Ownership is derived from the verified actor. A recipient reference grants no account read access.
+      description: Requires the banking-core-api client role accounts:read and a mapped customer. Ownership is derived from the verified actor. A recipient reference grants no account read access.
       parameters:
         - name: accountId
           in: path
